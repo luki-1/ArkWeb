@@ -1,0 +1,18 @@
+# runtime output: logs, scans, exports, screenshots (hundreds of MB)
+logs/
+
+# build output
+bin/
+recon_dll/out/
+src/sm_guest/capture_cs.h
+src/ak_host/overlay_vs.h
+src/ak_host/overlay_ps.h
+
+# raw dumps of the game executables (strings, RTTI, the UE3 SDK, disassembly, asset paths): regenerate
+# them from your own copies with the scripts in tools/ - the findings are in recon/PHASE0*.md
+recon/*
+!recon/*.md
+
+# Python
+__pycache__/
+*.pyc
