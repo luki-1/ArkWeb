@@ -65,6 +65,8 @@ same pose transfer in Python, for checking it offline.
 `arkweb.ini` next to either DLL can override `[ArkWeb] LogDir=` and a few switches (see `PHASE1.md`).
 Logs go to `logs\`.
 
+>Pro Tip: Just tell your AI agent to do it for you
+
 ## Playing
 
 1. Start both games and load into the open world in each. Keep Arkham Knight in front.
