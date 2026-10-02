@@ -14,6 +14,8 @@
 #include "hints.h"
 #include "capture.h"
 #include "zip.h"
+#include "mirror.h"
+#include "combat.h"
 
 #include <Xinput.h>
 #include <atomic>
@@ -818,6 +820,10 @@ namespace
 			gotham::Pump();
 			zip::PumpFallback();  // an L2 + R2 point launch the game's own call didn't take
 			zip::PinStep();       // a perch stays where it is (zip.h)
+			if (g_link.Valid()) {  // a fight in Arkham: Spider-Man pinned to Batman, in his pose (combat.h)
+				proto::HostState hs;
+				if (SeqRead(g_link.Host(), hs, 4)) combat::Step(hs);
+			}
 		}
 		return g_origPreCollide(a_world, a_b, a_c, a_d);
 	}
@@ -989,6 +995,13 @@ namespace
 			double s = a2 ? atof(a2) : 3.0;
 			gotham::g_hitSampleUntil = GetTickCount64() + static_cast<ULONGLONG>(s * 1000.0);
 			Log("  sampling hits for %.1f s", s);
+		} else if (!_stricmp(c, "mirror")) {
+			if (a1 && !_stricmp(a1, "watchcam")) {  // who writes the camera's position (mirror.h's write watch)
+				auto cam = reinterpret_cast<uintptr_t>(g_heroCamera);
+				mirror::WatchAt(cam ? cam + kCameraMatrix + 0x30 : 0, 4, a2 ? strtoul(a2, nullptr, 10) : 300, "the camera's position");
+			} else {
+				mirror::Command(a1, a2);  // Spider-Man takes Batman's pose (mirror.h)
+			}
 		} else if (!_stricmp(c, "zip")) {
 			float cam[16];
 			bool  haveCam = ReadCamera(cam);
@@ -1042,6 +1055,8 @@ namespace
 		hints::Install();
 		zip::g_heroLocal = &g_heroLocal;
 		zip::Install();
+		mirror::Install(nullptr);  // Spider-Man takes Batman's pose (mirror.h); the pose slot comes with the link
+		combat::Install(&g_heroCamera);  // in fights Spider-Man's camera is Arkham's (combat.h)
 		int captured = CaptureThisOnVtable(g_exe + kHeroLocalVtable, kHeroLocalSlots, &g_heroLocal);
 		int camSlots = CaptureThisOnVtable(g_exe + kHeroCameraManagerVtable, kHeroCameraManagerSlots, &g_heroCamera);
 		Log("camera manager capture: %d/%d slots", camSlots, kHeroCameraManagerSlots);
@@ -1189,6 +1204,7 @@ namespace
 		g_ring.Discard();  // anything still in there was meant for an earlier Spider-Man
 		g_ringReady = true;
 		capture::g_state = g_link.Capture();
+		mirror::g_pose = g_link.Pose();
 		Log("link open (%s), collision ring ready", proto::kMappingNameA);
 
 		LARGE_INTEGER freq;
@@ -1244,6 +1260,16 @@ namespace
 			if (zip::g_pinState.load() == 1 && inWorld) {  // a new perch: find the copies of his position to pin
 				const float p[3] = { xf.pos[0], xf.pos[1], xf.pos[2] };
 				zip::SetPin(FindPositionCopies(p), p);
+			}
+			if (combat::g_pinState.load() == 1 && inWorld) {  // a fight began: Spider-Man to Batman, then the copies to pin
+				double target[3];
+				combat::Target(target);
+				Teleport(target);
+				HeroXf now;
+				if (ReadHero(now)) {
+					const float p[3] = { now.pos[0], now.pos[1], now.pos[2] };
+					combat::SetPin(FindPositionCopies(p), p);
+				}
 			}
 			if (ULONGLONG until = gotham::g_hitSampleUntil.load(); until && GetTickCount64() > until) {
 				gotham::g_hitSampleUntil = 0;

@@ -50,6 +50,7 @@ namespace arkweb
 		proto::PadState*   Pad() const { return reinterpret_cast<proto::PadState*>(_base + proto::kOffPad); }
 		proto::GuestState* Guest() const { return reinterpret_cast<proto::GuestState*>(_base + proto::kOffGuestState); }
 		proto::CaptureState* Capture() const { return reinterpret_cast<proto::CaptureState*>(_base + proto::kOffCapture); }
+		proto::PoseState*  Pose() const { return reinterpret_cast<proto::PoseState*>(_base + proto::kOffPose); }
 
 		static bool Alive(uint64_t a_heartbeatMs)
 		{

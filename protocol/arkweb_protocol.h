@@ -16,7 +16,7 @@
 namespace arkweb::proto
 {
 	inline constexpr std::uint32_t kMagic = 0x574B5241;  // "ARKW"
-	inline constexpr std::uint32_t kVersion = 5;
+	inline constexpr std::uint32_t kVersion = 6;
 	inline constexpr wchar_t       kMappingName[] = L"Local\\ArkWeb_v1";
 	inline constexpr char          kMappingNameA[] = "Local\\ArkWeb_v1";
 
@@ -26,6 +26,7 @@ namespace arkweb::proto
 	inline constexpr std::uint64_t kOffPad = 0x200;
 	inline constexpr std::uint64_t kOffGuestState = 0x300;
 	inline constexpr std::uint64_t kOffCapture = 0x800;     // guest -> host: Spider-Man's frame (CaptureState)
+	// kOffPose = 0xA00: host -> guest, Batman's pose (PoseState, defined with it below)
 	inline constexpr std::uint64_t kOffEventRing = 0x1000;  // guest -> host events (later phases)
 	inline constexpr std::uint64_t kEventRingBytes = 0x10000;
 	inline constexpr std::uint64_t kOffHostRing = 0x11000;  // streamer -> host: commands (kRecCommand)
@@ -55,6 +56,10 @@ namespace arkweb::proto
 		kHostMenuOpen = 1u << 1,     // an AK menu owns input; the guest should drop held input
 		kHostLoading = 1u << 2,      // loading screen / streaming stall
 		kHostDrivePuppet = 1u << 3,  // the host is applying GuestState to Batman
+		kHostCombat = 1u << 4,       // Arkham says Batman is fighting: Arkham has him, the guest pins Spider-Man to
+		                             // him (puppetPos, puppetYaw) and mirrors his pose (PoseState)
+		kHostView = 1u << 5,         // combat: Arkham's own camera is the view (viewPos/Rot/FovX); Spider-Man's camera
+		                             // copies it, so the captured Spider-Man lines up with Arkham's picture
 	};
 
 	struct HostState
@@ -70,7 +75,10 @@ namespace arkweb::proto
 		double        puppetPos[3];   // where Batman's feet are right now, guest space
 		float         puppetYaw;      // radians, guest convention
 		std::uint32_t collisionEpoch; // bumps when the host clears all collision (Phase 2)
-		std::uint8_t  reserved[0x100 - 0x58];
+		double        viewPos[3];     // kHostView: Arkham's camera this frame, guest space (anchored)
+		float         viewRot[9];     // rows: side (screen left), up, forward
+		float         viewFovX;       // degrees, horizontal
+		std::uint8_t  reserved[0x100 - 0x98];
 	};
 	static_assert(sizeof(HostState) == 0x100);
 
@@ -187,6 +195,37 @@ namespace arkweb::proto
 		kShareNamed = 0,   // D3D12 shared resources, opened by name (kCaptureNameFmt)
 		kShareLegacy = 1,  // D3D11 (11on12) textures with legacy shared handles in `handles`
 	};
+
+	// ---- host -> guest: Batman's pose @0xA00 (seqlock) -----------------------------------------
+	// Batman's skeleton bones named in kPoseBoneNames, in that order, as positions in Spider-Man's model space
+	// (meters; +x his left, +y up, +z forward). The guest turns Spider-Man's matching joints the same way
+	// ("mirror": he takes Batman's pose, Batman's combat animations included).
+	inline constexpr std::uint64_t kOffPose = 0xA00;
+	inline constexpr std::uint32_t kPoseBones = 25;
+	inline constexpr const char*   kPoseBoneNames[kPoseBones] = {
+		"Bip01_Pelvis", "Bip01_Spine", "Bip01_Spine1", "Bip01_Spine2", "Bip01_Spine3", "Bip01_Neck", "Bip01_Head",       // 0-6
+		"Bip01_L_Clavicle", "Bip01_L_UpperArm", "Bip01_L_Forearm", "Bip01_L_Hand",                                       // 7-10
+		"Bip01_R_Clavicle", "Bip01_R_UpperArm", "Bip01_R_Forearm", "Bip01_R_Hand",                                       // 11-14
+		"Bip01_L_Thigh", "Bip01_L_Calf", "Bip01_L_Foot", "Bip01_R_Thigh", "Bip01_R_Calf", "Bip01_R_Foot",                // 15-20
+		"Bip01_L_Toe0", "Bip01_R_Toe0", "Bip01_L_Finger2", "Bip01_R_Finger2",                                            // 21-24
+	};
+
+	enum PoseFlags : std::uint32_t
+	{
+		kPoseValid = 1u << 0,  // every named bone was found and `bone` holds this tick's pose
+	};
+
+	struct PoseState
+	{
+		std::uint32_t seq;
+		std::uint32_t flags;          // PoseFlags
+		std::uint64_t frame;          // host tick it was taken on
+		std::uint32_t count;          // kPoseBones
+		std::uint32_t reserved0;
+		float         bone[kPoseBones][3];
+		std::uint8_t  reserved[0x200 - 0x18 - kPoseBones * 12];
+	};
+	static_assert(sizeof(PoseState) == 0x200);
 
 	// ---- byte rings (SPSC) ---------------------------------------------------------------------
 	// [u64 head (total bytes written)] pad to 0x40 [u64 tail (total bytes consumed)] pad to 0x80,

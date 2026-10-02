@@ -32,6 +32,20 @@ known issues below.
 Zip to point uses Arkham's grapple points as targets (L2 + R2, with a marker drawn in Arkham's view). With
 nothing pressed, Spider-Man perches on the point. A jumps or launches off; B drops.
 
+### Combat
+
+When Arkham says Batman is fighting (its own `IsInCombat` check), the mod hands the fight to Arkham Knight
+automatically, and hands it back two seconds after the fight ends:
+
+- Arkham plays Batman with its own freeflow combat, controller and combat camera. Batman stays hidden.
+- Spider-Man is pinned to Batman's position and takes Batman's pose every frame. His joints are turned to match
+  Batman's skeleton: hips, spine, shoulders, arms, legs and feet, scaled to his proportions.
+- Spider-Man's camera copies Arkham's, so the captured Spider-Man lines up with Arkham's picture.
+
+Spider-Man's joint hierarchy isn't stored anywhere the mod could find, so it was worked out from recorded motion
+(`tools/sm_pose_sampler.py`, `tools/sm_skel_probe.py`, `tools/ak_skel_probe.py`). `tools/retarget_v2.py` is the
+same pose transfer in Python, for checking it offline.
+
 ## Requirements
 
 - Windows 10 x64 and a PC that can run both games at once
@@ -80,6 +94,9 @@ go to `logs\sm_guest.log` and `logs\ak_host.log`.
   it loads and the tile is rescanned.
 - A zip whose path is blocked is cut short and Spider-Man drops (there's no line-of-sight check yet).
 - Spider-Man can look dark in places (his lighting comes from New York's time of day).
+- In combat, hands and wrists aren't copied (no fists), and the camera cuts at the start and end of a fight.
+- The combat pose transfer is tied to the suit it was recorded with. A suit with a different skeleton is detected
+  (bone lengths are checked) and the mirror stays off.
 - Do **not** run `bin\link_test.exe` while the games are running. It opens the live shared memory.
 
 ## Repository layout

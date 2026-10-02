@@ -7,6 +7,7 @@
 #include "../common/coords.h"
 #include "../common/link.h"
 #include "devcmd.h"
+#include "pose.h"
 #include "ue3.h"
 
 #include <Xinput.h>
@@ -31,6 +32,9 @@ namespace
 	uintptr_t            g_fnSetRotation = 0;
 	uintptr_t            g_fnSetPhysics = 0;
 	uintptr_t            g_fnSetHidden = 0;  // BmGame.RPawnCharacter.SetHidden (Actor.SetHidden's native)
+	uintptr_t            g_fnIsInCombat = 0;  // BmGame.RPlayerControllerCombat.IsInCombat (bool bForceCheck, bool ReturnValue)
+	int32_t              g_combatClassName = -1;  // the class that function belongs to (only its instances are asked)
+	uintptr_t            g_combatController = 0;  // the last controller found to be one
 	std::atomic<bool>    g_ready{ false };
 	int32_t              g_playerControllerName = -1;
 	uintptr_t            g_lastController = 0;
@@ -84,6 +88,20 @@ namespace
 	uint64_t g_frame = 0;
 	int      g_drivePuppet = 1;
 	uint64_t g_lastGuestFrame = 0;
+	// combat: Arkham's own camera (its GetPlayerViewPoint answer this frame), for the guest to copy
+	FVector  g_akViewLoc{};
+	FRotator g_akViewRot{};
+	float    g_akViewFov = 0.0f;
+	bool     g_akViewValid = false;
+	// Combat: when Arkham says Batman is fighting, Arkham gets him back (its own fight, the controller) and the
+	// guest pins Spider-Man to him and gives him Batman's pose (sm_guest/combat.h, mirror.h)
+	bool      g_combat = false;
+	ULONGLONG g_lastFightMs = 0;
+	uintptr_t g_combatMesh = 0;
+	uint32_t  g_combatMeshFlags = 0;
+	constexpr int      kMeshRenderFlags = 0x5B0;  // SkeletalMeshComponent bitfield
+	constexpr uint32_t kMeshAnimWhenHidden = 0x20 | 0x80;  // bUpdateSkelWhenNotRendered | bTickAnimNodesWhenNotRendered
+	constexpr int      kPawnMeshComponent = 0x38C;  // Pawn.Mesh
 
 	void Call(uintptr_t a_obj, uintptr_t a_fn, void* a_parms)
 	{
@@ -119,6 +137,63 @@ namespace
 			uint32_t ret;
 		} p{ a_rot, 0 };
 		Call(a_pawn, g_fnSetRotation, &p);
+	}
+
+	// Arkham's own judgement of a fight (RPlayerControllerCombat.IsInCombat, bForceCheck false)
+	// a script function called on an object of another class is a crash in Arkham: its instances only
+	bool IsCombatController(uintptr_t a_obj)
+	{
+		if (a_obj == g_combatController) return true;
+		if (g_combatClassName < 0) return false;
+		for (uintptr_t c = ClassOf(a_obj), d = 0; c && d < 32; c = ReadOr<uintptr_t>(c + 0x5C, 0), ++d) {
+			if (NameIndexOf(c) == g_combatClassName) {
+				g_combatController = a_obj;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool ArkhamInCombat(uintptr_t a_controller)
+	{
+		if (!g_fnIsInCombat || !IsCombatController(a_controller)) return false;
+		struct
+		{
+			uint32_t force;
+			uint32_t ret;
+		} p{ 0, 0 };
+		Call(a_controller, g_fnIsInCombat, &p);
+		return (p.ret & 1) != 0;
+	}
+
+	// Into combat: Batman is Arkham's again (falling, then its own movement and fight); he stays hidden with
+	// Spider-Man drawn in his place, but his skeleton keeps animating (SpaceBases is what Spider-Man mirrors).
+	// Out of it: the next tick drives him from Spider-Man again.
+	void SetCombat(uintptr_t a_pawn, bool a_on)
+	{
+		g_combat = a_on;
+		uintptr_t mesh = ReadOr<uintptr_t>(a_pawn + kPawnMeshComponent, 0);
+		if (a_on) {
+			if (g_driving) {
+				SetPhysics(a_pawn, PHYS_Falling);
+				g_driving = false;
+			}
+			if (mesh && Read(mesh + kMeshRenderFlags, g_combatMeshFlags)) {
+				g_combatMesh = mesh;
+				uint32_t f = g_combatMeshFlags | kMeshAnimWhenHidden;
+				SafeWrite(reinterpret_cast<void*>(mesh + kMeshRenderFlags), &f, sizeof(f));
+			}
+			Log("combat: Arkham says Batman is fighting - Arkham plays him, Spider-Man takes his place and his moves");
+		} else {
+			if (g_combatMesh && g_combatMesh == mesh) {
+				uint32_t f = ReadOr<uint32_t>(mesh + kMeshRenderFlags, 0);
+				f = (f & ~kMeshAnimWhenHidden) | (g_combatMeshFlags & kMeshAnimWhenHidden);
+				SafeWrite(reinterpret_cast<void*>(mesh + kMeshRenderFlags), &f, sizeof(f));
+			}
+			g_combatMesh = 0;
+			g_akViewValid = false;
+			Log("combat over: Spider-Man has the controller again");
+		}
 	}
 
 	// Batman's model (and with it his cape and shadow) out of the picture while Spider-Man is drawn
@@ -346,7 +421,7 @@ namespace
 
 	bool ArkhamInFront();
 
-	void PublishPad(uintptr_t a_controller, bool a_active)
+	void PublishPad(uintptr_t a_controller, bool a_active, bool a_cameraOnly = false)
 	{
 		if (!g_xinputGetState) {
 			static bool tried = false;
@@ -393,6 +468,12 @@ namespace
 				p.camPitch = static_cast<float>(pitch * coords::kPi / 32768.0);
 				p.flags |= proto::kPadCamera;
 			}
+		}
+		if (a_cameraOnly) {  // combat: Arkham plays Batman with the controller; Spider-Man's camera copies Arkham's
+			p.buttons = 0;
+			p.leftTrigger = p.rightTrigger = 0;
+			p.thumbLX = p.thumbLY = 0;
+			p.thumbRX = p.thumbRY = 0;
 		}
 		static proto::PadState last{};
 		if (memcmp(&p.buttons, &last.buttons, 0x18 - 0xC) != 0 || p.flags != last.flags) ++g_padPacket;
@@ -528,7 +609,14 @@ namespace
 		// only a guest that stands in Gotham (anchored) drives Batman; before that its position is New York's
 		bool haveGuest = Link::Alive(g_link.Header()->guestHeartbeatMs) && (gs.flags & proto::kGuestInWorld) && (gs.flags & proto::kGuestAnchored);
 
-		if (haveGuest && g_drivePuppet) {
+		// Combat by Arkham's own judgement; it ends 2 s after Arkham stops saying so (no flicker between moves)
+		ULONGLONG nowMs = GetTickCount64();
+		bool      fight = haveGuest && ArkhamInCombat(a_controller);
+		if (fight) g_lastFightMs = nowMs;
+		bool combat = haveGuest && (fight || (g_combat && nowMs - g_lastFightMs < 2000));
+		if (combat != g_combat) SetCombat(pawn, combat);
+
+		if (haveGuest && g_drivePuppet && !g_combat) {
 			if (!g_driving) {
 				Log("guest linked: driving Batman (guest frame %llu)", static_cast<unsigned long long>(gs.frame));
 				SetPhysics(pawn, PHYS_None);
@@ -572,19 +660,37 @@ namespace
 			SetPhysics(pawn, PHYS_Falling);
 			g_driving = false;
 		}
-		overlay::g_puppet.store(g_driving, std::memory_order_relaxed);
-		UpdateBatmanHidden(pawn, g_driving);
+		overlay::g_puppet.store(g_driving || g_combat, std::memory_order_relaxed);
+		UpdateBatmanHidden(pawn, g_driving || g_combat);
 
-		PublishPad(a_controller, g_driving);
+		PublishPad(a_controller, g_driving || g_combat, g_combat);
 
 		proto::HostState hs{};
-		hs.flags = proto::kHostInGame | (g_driving ? proto::kHostDrivePuppet : 0);
+		hs.flags = proto::kHostInGame | (g_driving ? proto::kHostDrivePuppet : 0) | (g_combat ? proto::kHostCombat : 0);
 		hs.frame = g_frame;
 		hs.deltaTime = a_dt;
 		hs.puppetPos[0] = feet.x, hs.puppetPos[1] = feet.y, hs.puppetPos[2] = feet.z;
 		hs.puppetYaw = static_cast<float>(coords::GuestYawOfForward(gfwd));
+		if (g_combat && g_akViewValid) {
+			// Arkham's camera for Spider-Man's: UE3 rotation axes (X forward, Y right, Z up) into guest rows side
+			// (= left), up, forward
+			const double k = coords::kPi / 32768.0;
+			double       sp = std::sin(g_akViewRot.pitch * k), cp = std::cos(g_akViewRot.pitch * k), sy = std::sin(g_akViewRot.yaw * k),
+			       cy = std::cos(g_akViewRot.yaw * k), sr = std::sin(g_akViewRot.roll * k), cr = std::cos(g_akViewRot.roll * k);
+			coords::V3 fwd = coords::HostDirToGuest({ cp * cy, cp * sy, sp });
+			coords::V3 right = coords::HostDirToGuest({ sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp });
+			coords::V3 up = coords::HostDirToGuest({ -(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp });
+			coords::V3 pos = coords::HostPosToGuest({ g_akViewLoc.x, g_akViewLoc.y, g_akViewLoc.z });
+			hs.viewPos[0] = pos.x, hs.viewPos[1] = pos.y, hs.viewPos[2] = pos.z;
+			const coords::V3 rows[3] = { { -right.x, -right.y, -right.z }, up, fwd };
+			for (int r = 0; r < 3; ++r) hs.viewRot[r * 3] = static_cast<float>(rows[r].x), hs.viewRot[r * 3 + 1] = static_cast<float>(rows[r].y),
+			                            hs.viewRot[r * 3 + 2] = static_cast<float>(rows[r].z);
+			hs.viewFovX = g_akViewFov;
+			hs.flags |= proto::kHostView;
+		}
 		SeqWrite(g_link.Host(), hs);
 		g_link.Header()->hostHeartbeatMs = GetTickCount64();
+		pose::Publish(g_link, pawn, g_frame);  // Batman's bones for Spider-Man's mirror (pose.h)
 
 		g_lastBatman = loc;
 		g_lastTickMs = GetTickCount64();
@@ -638,6 +744,16 @@ namespace
 	// two never shake against each other.
 	void OverrideView(uintptr_t a_obj, void* a_parms)
 	{
+		if (g_combat) {  // Arkham's camera is the view: keep what it answered, for Spider-Man's camera to copy
+			if (a_parms && a_obj == g_lastController) {
+				memcpy(&g_akViewLoc, static_cast<uint8_t*>(a_parms) + 0x0, sizeof(g_akViewLoc));
+				memcpy(&g_akViewRot, static_cast<uint8_t*>(a_parms) + 0xC, sizeof(g_akViewRot));
+				uintptr_t cam = ReadOr<uintptr_t>(a_obj + kPlayerCamera, 0);
+				g_akViewFov = cam ? ReadOr<float>(cam + kCameraPovFov, 0.0f) : 0.0f;
+				g_akViewValid = g_akViewFov > 1.0f;
+			}
+			return;
+		}
 		if (!devcmd::g_mimicCamera || !g_driving || !g_viewValid || !a_parms || a_obj != g_lastController) return;
 		memcpy(static_cast<uint8_t*>(a_parms) + 0x0, &g_viewLoc, sizeof(g_viewLoc));
 		memcpy(static_cast<uint8_t*>(a_parms) + 0xC, &g_viewRot, sizeof(g_viewRot));
@@ -683,6 +799,13 @@ namespace
 		g_fnSetRotation = FindObject("Engine.Actor.SetRotation");
 		g_fnSetPhysics = FindObject("Engine.Actor.SetPhysics");
 		g_fnSetHidden = FindObject("BmGame.RPawnCharacter.SetHidden");
+		g_fnIsInCombat = FindObject("BmGame.RPlayerControllerCombat.IsInCombat");
+		g_combatClassName = FindName("RPlayerControllerCombat");
+		if (!g_fnIsInCombat) {
+			g_fnIsInCombat = FindObject("BmGame.RPlayerController.IsInCombat");
+			g_combatClassName = FindName("RPlayerController");
+		}
+		Log("combat: IsInCombat %p", reinterpret_cast<void*>(g_fnIsInCombat));
 		if (!g_fnSetHidden) g_fnSetHidden = FindObject("Engine.Actor.SetHidden");
 		Log("hide: SetHidden %p", reinterpret_cast<void*>(g_fnSetHidden));
 		// grapple ledges for Spider-Man's zip to point (grapple.h)

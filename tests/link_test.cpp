@@ -136,11 +136,13 @@ static void PrintLayout()
 	F(CaptureState, seq); F(CaptureState, flags); F(CaptureState, generation); F(CaptureState, slot); F(CaptureState, frameId); F(CaptureState, qpc);
 	F(CaptureState, width); F(CaptureState, height); F(CaptureState, tanHalfFovX); F(CaptureState, tanHalfFovY); F(CaptureState, camPos);
 	F(CaptureState, camRot); F(CaptureState, range); F(CaptureState, format); F(CaptureState, share); F(CaptureState, handles);
+	F(PoseState, seq); F(PoseState, flags); F(PoseState, frame); F(PoseState, count); F(PoseState, bone);
+	F(HostState, viewPos); F(HostState, viewRot); F(HostState, viewFovX);
 	F(TileRecord, key); F(TileRecord, awtBytes); F(TileRecord, awhBytes);
 	std::printf("  \"kOffHostRing\": %llu, \"kHostRingBytes\": %llu, \"kOffCollisionRing\": %llu, \"kCollisionRingBytes\": %llu,\n", proto::kOffHostRing,
 		proto::kHostRingBytes, proto::kOffCollisionRing, proto::kCollisionRingBytes);
-	std::printf("  \"kOffHostState\": %llu, \"kOffPad\": %llu, \"kOffGuestState\": %llu, \"kOffCapture\": %llu, \"kMappingBytes\": %llu, \"kVersion\": %u\n}\n",
-		proto::kOffHostState, proto::kOffPad, proto::kOffGuestState, proto::kOffCapture, proto::kMappingBytes, proto::kVersion);
+	std::printf("  \"kOffHostState\": %llu, \"kOffPad\": %llu, \"kOffGuestState\": %llu, \"kOffCapture\": %llu, \"kOffPose\": %llu, \"kMappingBytes\": %llu, \"kVersion\": %u\n}\n",
+		proto::kOffHostState, proto::kOffPad, proto::kOffGuestState, proto::kOffCapture, proto::kOffPose, proto::kMappingBytes, proto::kVersion);
 #undef F
 }
 
