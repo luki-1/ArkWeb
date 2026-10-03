@@ -1,40 +1,42 @@
-> **Set up ArkWeb with Claude. No technical knowledge needed.** You don't build or configure anything
-> yourself: Claude does it on your PC and explains each step. You need both games on Steam, a controller, and a
-> PC that can run both games at once.
->
-> 1. Download the Claude desktop app from [claude.ai/download](https://claude.ai/download), install it and sign in.
->    (The part of Claude that can work on your PC, Claude Code, comes with Claude's paid plans.)
-> 2. Make an empty folder for the mod, for example a folder called **ArkWeb** in your Downloads.
-> 3. In the Claude app, open the **Code** tab, start a new session and choose that folder.
-> 4. Copy this message, paste it into Claude and send it:
->
->    ```
->    Download ArkWeb from https://github.com/luki-1/ArkWeb into this folder, read its AGENTS.md, and set it up for me: check my PC and games, build it, install it, then guide me through my first session.
->    ```
->
-> 5. Claude asks before it does anything on your PC. Allow its requests, and do what it asks you to do when it
->    asks. It will:
->    - check that both games are installed and that Spider-Man is version 4.0630, the only version ArkWeb works with;
->    - install the free tools it needs to build the mod;
->    - build the mod, ask you to close both games, install it, and back up your Arkham Knight save;
->    - tell you which game settings to change;
->    - walk you through your first session: what to load, where to stand, when to start moving, and the controls.
->
-> To play again later, open the Claude app, start a new session in the **Code** tab with the same **ArkWeb** folder,
-> and say **"Let's play ArkWeb"**. While you play, just tell Claude what's wrong, like "I'm stuck in a building",
-> "Spider-Man looks dark" or "I can see Batman". To remove the mod, say **"Uninstall ArkWeb"**.
->
-> Other AI agents that can work on your PC (Codex, Cursor and the like) can follow the same guide.
-
-> **Spider-Man stuck inside a building?** Just tell your AI agent to teleport you 200 m into the air.
->
-> *For the agent:* write the line `hero tp 0 200 0` to `logs\sm_cmd.txt` (meters relative to Spider-Man; the second number is up). The guest DLL runs it within half a second and logs `teleport ... held` to `logs\sm_guest.log`.
-
 # ArkWeb
 
 https://www.youtube.com/watch?v=O6Mkm_NGCX8
 
 Spider-Man's web swinging in Batman: Arkham Knight's Gotham.
+
+## Set it up with Claude (no technical knowledge needed)
+
+You don't build or configure anything yourself: Claude does it on your PC and explains each step. You need both
+games on Steam, a controller, and a PC that can run both games at once.
+
+1. Download the Claude desktop app from [claude.ai/download](https://claude.ai/download), install it and sign in.
+   (The part of Claude that can work on your PC, Claude Code, comes with Claude's paid plans.)
+2. Make an empty folder for the mod, for example a folder called **ArkWeb** in your Downloads.
+3. In the Claude app, open the **Code** tab, start a new session and choose that folder.
+4. Copy this message, paste it into Claude and send it:
+   ```
+   Download https://github.com/luki-1/ArkWeb into this folder, then follow
+   its AGENTS.md: set ArkWeb up for me and guide me through my first session.
+   ```
+5. Claude asks before it does anything on your PC. Allow its requests, and do what it asks you to do when it
+   asks. It will:
+   - check that both games are installed and that Spider-Man is version 4.0630, the only version ArkWeb works with
+   - install the free tools it needs to build the mod
+   - build the mod, ask you to close both games, install it, and back up your Arkham Knight save
+   - tell you which game settings to change
+   - walk you through your first session: what to load, where to stand, when to start moving, and the controls
+
+To play again later, open the Claude app, start a new session in the **Code** tab with the same **ArkWeb** folder,
+and say **"Let's play ArkWeb"**. While you play, just tell Claude what's wrong, like "I'm stuck in a building",
+"Spider-Man looks dark" or "I can see Batman". To remove the mod, say **"Uninstall ArkWeb"**.
+
+**Spider-Man stuck inside a building?** Just tell your AI agent to teleport you 200 m into the air.
+
+*For the agent:* write the line `hero tp 0 200 0` to `logs\sm_cmd.txt` (meters relative to Spider-Man; the second number is up). The guest DLL runs it within half a second and logs `teleport ... held` to `logs\sm_guest.log`.
+
+Other AI agents that can work on your PC (Codex, Cursor and the like) can follow the same guide.
+
+## What it is
 
 ArkWeb runs **Marvel's Spider-Man Remastered** alongside **Batman: Arkham Knight**. You play Spider-Man's
 own movement (swinging, wall running, wall crawling, point launches) with a controller while looking at
